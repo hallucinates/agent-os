@@ -102,6 +102,8 @@ def _job_to_wire(j: Any, config: Any = None) -> dict[str, Any]:
 
     return {  # noqa: PIE810 — wire schema favors flat literal dict
         "id": d.get("id"),
+        "job_id": d.get("id"),
+        "jobId": d.get("id"),
         "name": d.get("name", ""),
         # Always serve the normalized expression so the WebUI cron editor can
         # parse it as a 5-field cron. Historical raw text lives in scheduleRaw.
@@ -110,12 +112,15 @@ def _job_to_wire(j: Any, config: Any = None) -> dict[str, Any]:
         "message": text,
         "text": text,
         "payloadKind": kind,
+        "payload_kind": kind,
         # A script job's file (and an agent turn's optional pre-run collector),
         # emitted for every kind so the UI reads one shape.
         "script": payload_script(payload),
         "workdir": payload_workdir(payload),
         "scriptArgs": payload_args(payload),
+        "script_args": payload_args(payload),
         "agentId": payload_agent_id(payload, "main"),
+        "agent_id": payload_agent_id(payload, "main"),
         "status": status_str,
         "enabled": (
             bool(d.get("enabled", True)) and status_str not in ("paused", "disabled", "deleted")
@@ -136,9 +141,12 @@ def _job_to_wire(j: Any, config: Any = None) -> dict[str, Any]:
         "session_target": session_target,
         "sessionTarget": session_target,
         "targetSessionKey": d.get("session_key", ""),
+        "target_session_key": d.get("session_key", ""),
         "originSessionKey": d.get("origin_session_key", ""),
+        "origin_session_key": d.get("origin_session_key", ""),
         "timeout_seconds": d.get("timeout_seconds", 600),
         "wakeMode": wake_mode_str,
+        "wake_mode": wake_mode_str,
         "consecutive_errors": d.get("consecutive_errors", 0),
         "delivery": _delivery_to_wire(delivery),
         "toolPolicy": _tool_policy_to_wire(d.get("tool_policy")),
@@ -183,9 +191,7 @@ def _delivery_to_wire(delivery: Any) -> dict[str, Any]:
             "threadId": delivery.get("thread_id", ""),
             "webhookUrl": delivery.get("webhook_url", "") or "",
             "bestEffort": bool(delivery.get("best_effort", False)),
-            "failureDestination": _failure_destination_to_wire(
-                delivery.get("failure_destination")
-            ),
+            "failureDestination": _failure_destination_to_wire(delivery.get("failure_destination")),
         }
     return {
         "mode": (
@@ -347,10 +353,10 @@ def _schedule_from_params(params: dict[str, Any]) -> tuple[ScheduleKind, str, st
 
 
 def _resolve_session_target(params: dict[str, Any]) -> SessionTarget:
-    raw = params.get("sessionTarget")
+    raw = params.get("sessionTarget") or params.get("session_target")
     if isinstance(raw, str) and raw.strip():
         return SessionTarget(raw)
-    payload_kind_param = params.get("payloadKind")
+    payload_kind_param = params.get("payloadKind") or params.get("payload_kind")
     if payload_kind_param == SYSTEM_EVENT_KIND:
         return SessionTarget.MAIN
     return SessionTarget.ISOLATED
@@ -375,6 +381,7 @@ def _resolve_target_session_key(
             or params.get("sessionKey")
             or params.get("session_key")
             or params.get("originSessionKey")
+            or params.get("origin_session_key")
             or ""
         )
     return params.get("targetSessionKey") or params.get("target_session_key") or ""
@@ -385,6 +392,7 @@ def _resolve_origin_session_key(params: dict[str, Any], session_target: SessionT
         return ""
     return (
         params.get("originSessionKey")
+        or params.get("origin_session_key")
         or params.get("sessionKey")
         or params.get("session_key")
         or ""
@@ -424,9 +432,7 @@ def _build_failure_destination(raw: Any) -> FailureDestination | None:
     if mode_norm == "webhook":
         url = raw.get("webhookUrl") or raw.get("to") or ""
         if not url:
-            raise ValueError(
-                "failureDestination mode='webhook' requires webhookUrl"
-            )
+            raise ValueError("failureDestination mode='webhook' requires webhookUrl")
         validate_webhook_url(str(url))
         return FailureDestination(
             mode=DeliveryMode.WEBHOOK,
@@ -450,9 +456,7 @@ def _build_webhook_delivery(delivery_raw: dict[str, Any]) -> DeliveryConfig:
     token = delivery_raw.get("webhookToken") or delivery_raw.get("token") or ""
     best_effort = bool(delivery_raw.get("bestEffort", False))
     validate_webhook_url(str(url))
-    failure_destination = _build_failure_destination(
-        delivery_raw.get("failureDestination")
-    )
+    failure_destination = _build_failure_destination(delivery_raw.get("failureDestination"))
     return DeliveryConfig(
         mode=DeliveryMode.WEBHOOK,
         webhook_url=str(url),
@@ -599,10 +603,10 @@ def _build_payload(
     if raw_text is None:
         raw_text = params.get("message")
     text = raw_text if isinstance(raw_text, str) else ""
-    kind = params.get("payloadKind")
+    kind = params.get("payloadKind") or params.get("payload_kind")
     if not isinstance(kind, str) or not kind:
         kind = SYSTEM_EVENT_KIND if session_target == SessionTarget.MAIN else REMINDER_KIND
-    agent_id = params.get("agentId", "main")
+    agent_id = params.get("agentId") or params.get("agent_id") or "main"
 
     script_raw = params.get("script")
     script = normalize_script_value(script_raw) if isinstance(script_raw, str) else ""
@@ -660,6 +664,15 @@ def _handler_key_for_payload_kind(kind: str) -> str:
     return "agent_run"
 
 
+def _resolve_job_id(params: dict | None) -> str:
+    if not isinstance(params, dict):
+        raise ValueError("params.id is required")
+    job_id = params.get("id") or params.get("job_id") or params.get("jobId")
+    if not isinstance(job_id, str) or not job_id.strip():
+        raise ValueError("params.id is required")
+    return job_id.strip()
+
+
 @_d.method("cron.list")
 async def _handle_cron_list(params: dict | None, ctx: RpcContext) -> list[dict]:
     scheduler = getattr(ctx, "cron_scheduler", None)
@@ -667,20 +680,21 @@ async def _handle_cron_list(params: dict | None, ctx: RpcContext) -> list[dict]:
         return []
     jobs = await scheduler.list_jobs()
     result = [_job_to_wire(j, config=ctx.config) for j in jobs]
-    agent_id = (params or {}).get("agentId")
+    agent_id = (params or {}).get("agentId") or (params or {}).get("agent_id")
     if agent_id:
-        result = [j for j in result if j.get("agentId") == agent_id]
+        result = [
+            j for j in result if j.get("agentId") == agent_id or j.get("agent_id") == agent_id
+        ]
     return result
 
 
 @_d.method("cron.status")
 async def _handle_cron_status(params: dict | None, ctx: RpcContext) -> dict[str, Any]:
-    if not isinstance(params, dict) or "id" not in params:
-        raise ValueError("params.id is required")
+    job_id = _resolve_job_id(params)
     scheduler = _require_scheduler(ctx)
-    job = await scheduler.get_job(params["id"])
+    job = await scheduler.get_job(job_id)
     if job is None:
-        raise KeyError(f"Cron job not found: {params['id']}")
+        raise KeyError(f"Cron job not found: {job_id}")
     return _job_to_wire(job, config=ctx.config)
 
 
@@ -838,8 +852,9 @@ _d.method("cron.create")(_handle_cron_add)
 
 @_d.method("cron.update")
 async def _handle_cron_update(params: dict | None, ctx: RpcContext) -> dict[str, Any]:
-    if not isinstance(params, dict) or "id" not in params:
+    if not isinstance(params, dict):
         raise ValueError("params.id is required")
+    job_id = _resolve_job_id(params)
     scheduler = _require_scheduler(ctx)
 
     patch = {}
@@ -874,15 +889,15 @@ async def _handle_cron_update(params: dict | None, ctx: RpcContext) -> dict[str,
     if "enabled" in params:
         patch["enabled"] = bool(params["enabled"])
         if params["enabled"]:
-            job = await scheduler.get_job(params["id"])
+            job = await scheduler.get_job(job_id)
             if job and job.status.value == "paused":
-                toggled_job = await scheduler.resume_job(params["id"])
+                toggled_job = await scheduler.resume_job(job_id)
         else:
-            toggled_job = await scheduler.pause_job(params["id"])
+            toggled_job = await scheduler.pause_job(job_id)
 
-    current_job = toggled_job or await scheduler.get_job(params["id"])
+    current_job = toggled_job or await scheduler.get_job(job_id)
     if current_job is None:
-        raise KeyError(f"Cron job not found: {params['id']}")
+        raise KeyError(f"Cron job not found: {job_id}")
 
     if (
         tz_was_supplied
@@ -900,27 +915,32 @@ async def _handle_cron_update(params: dict | None, ctx: RpcContext) -> dict[str,
             "prompt",
             "message",
             "payloadKind",
+            "payload_kind",
             "agentId",
+            "agent_id",
             "script",
             "workdir",
             "scriptArgs",
             "script_args",
             "sessionTarget",
+            "session_target",
             "targetSessionKey",
             "target_session_key",
             "originSessionKey",
+            "origin_session_key",
             "sessionKey",
             "session_key",
         )
     )
     if payload_related:
         current_kind = payload_kind(current_job.payload, current_job.session_target)
-        merged_kind = params.get("payloadKind", current_kind)
+        merged_kind = params.get("payloadKind", params.get("payload_kind", current_kind))
         # A script payload's "text" is its script path (payload_text stands in for
         # display), so it must not be inherited as prompt text when a job is
         # converted away from script.
         current_text = (
-            "" if current_kind == SCRIPT_KIND
+            ""
+            if current_kind == SCRIPT_KIND
             else payload_text(current_job.payload, current_job.session_target)
         )
         merged_params = {
@@ -929,16 +949,25 @@ async def _handle_cron_update(params: dict | None, ctx: RpcContext) -> dict[str,
                 params.get("prompt", params.get("message", current_text)),
             ),
             "payloadKind": merged_kind,
-            "agentId": params.get("agentId", payload_agent_id(current_job.payload)),
+            "agentId": params.get(
+                "agentId",
+                params.get("agent_id", payload_agent_id(current_job.payload)),
+            ),
             "sessionTarget": params.get(
                 "sessionTarget",
-                getattr(current_job.session_target, "value", str(current_job.session_target)),
+                params.get(
+                    "session_target",
+                    getattr(current_job.session_target, "value", str(current_job.session_target)),
+                ),
             ),
             "originSessionKey": params.get(
                 "originSessionKey",
                 params.get(
-                    "sessionKey",
-                    params.get("session_key", current_job.origin_session_key),
+                    "origin_session_key",
+                    params.get(
+                        "sessionKey",
+                        params.get("session_key", current_job.origin_session_key),
+                    ),
                 ),
             ),
         }
@@ -1050,31 +1079,29 @@ async def _handle_cron_update(params: dict | None, ctx: RpcContext) -> dict[str,
         patch["tool_policy"] = merged
 
     if patch:
-        job = await scheduler.update_job(params["id"], **patch)
+        job = await scheduler.update_job(job_id, **patch)
     else:
         job = current_job
     if job is None:
-        raise KeyError(f"Cron job not found: {params['id']}")
+        raise KeyError(f"Cron job not found: {job_id}")
     return _job_to_wire(job, config=ctx.config)
 
 
 @_d.method("cron.remove")
 async def _handle_cron_remove(params: dict | None, ctx: RpcContext) -> None:
-    if not isinstance(params, dict) or "id" not in params:
-        raise ValueError("params.id is required")
+    job_id = _resolve_job_id(params)
     scheduler = _require_scheduler(ctx)
-    removed = await scheduler.remove_job(params["id"])
+    removed = await scheduler.remove_job(job_id)
     if not removed:
-        raise KeyError(f"Cron job not found: {params['id']}")
+        raise KeyError(f"Cron job not found: {job_id}")
     return None
 
 
 @_d.method("cron.run")
 async def _handle_cron_run(params: dict | None, ctx: RpcContext) -> dict[str, Any]:
-    if not isinstance(params, dict) or "id" not in params:
-        raise ValueError("params.id is required")
+    job_id = _resolve_job_id(params)
     scheduler = _require_scheduler(ctx)
-    result = await scheduler.run_job_now(params["id"])
+    result = await scheduler.run_job_now(job_id)
     return _manual_run_to_wire(result)
 
 
@@ -1102,12 +1129,8 @@ async def _live_session_keys(ctx: RpcContext, keys: list[str]) -> set[str]:
 
 @_d.method("cron.runs")
 async def _handle_cron_runs(params: dict | None, ctx: RpcContext) -> list[dict]:
-    if not isinstance(params, dict):
-        raise ValueError("params.id is required")
-    job_id = params.get("id") or params.get("job_id")
-    if not job_id:
-        raise ValueError("params.id is required")
-    limit = params.get("limit", 20)
+    job_id = _resolve_job_id(params)
+    limit = (params or {}).get("limit", 20)
     scheduler = getattr(ctx, "cron_scheduler", None)
     if scheduler is None:
         return []
@@ -1144,12 +1167,8 @@ async def _handle_cron_runs(params: dict | None, ctx: RpcContext) -> list[dict]:
 @_d.method("cron.runOutput")
 async def _handle_cron_run_output(params: dict | None, ctx: RpcContext) -> dict[str, Any]:
     """Full stored output for a single run. Omit ``runId`` for the latest run."""
-    if not isinstance(params, dict):
-        raise ValueError("params.id is required")
-    job_id = params.get("id") or params.get("job_id")
-    if not job_id:
-        raise ValueError("params.id is required")
-    run_id = params.get("runId") or params.get("run_id") or None
+    job_id = _resolve_job_id(params)
+    run_id = (params or {}).get("runId") or (params or {}).get("run_id") or None
     scheduler = _require_scheduler(ctx)
     run = await scheduler.get_run(job_id, run_id)
     if run is None:
