@@ -861,12 +861,16 @@ async def _handle_sessions_list(params: dict | None, ctx: RpcContext) -> dict:
 async def _handle_sessions_create(params: dict | None, ctx: RpcContext) -> dict:
     if not isinstance(params, dict):
         params = {}
-    agent_id = normalize_agent_id(params.get("agentId", "main"))
+    raw_agent = params.get("agentId") or params.get("agent_id") or "main"
+    agent_id = normalize_agent_id(raw_agent)
     # Same normalizer ``sessions.rename`` and ``sessions.patch`` use: the name
     # is user-typed (``/new <title>`` pastes arrive here verbatim) and is
     # later rendered on a terminal, so control bytes, newlines and length
     # are cut down before storage rather than on every read (#1618).
-    display_name = normalize_session_name(params.get("displayName"))
+    raw_display_name = params.get("displayName")
+    if raw_display_name is None:
+        raw_display_name = params.get("display_name", params.get("name"))
+    display_name = normalize_session_name(raw_display_name)
     message = params.get("message")
     model = _model_value(params.get("model")) or _agent_registry_model(ctx, agent_id)
     kind = params.get("kind") or params.get("sessionKind")
@@ -1537,23 +1541,31 @@ async def _handle_sessions_patch(params: dict | None, ctx: RpcContext) -> dict:
 
     update_values: dict[str, Any] = {}
     params = require_params_dict(params)
-    field_map = {
-        "displayName": "display_name",
-        "model": "model",
-        "thinkingLevel": "thinking_level",
-        "metadata": "meta",
-    }
     updated_fields: list[str] = []
-    for field, attr in field_map.items():
-        if field in params and hasattr(session, attr):
-            value = params[field]
-            # The display name is user-typed on every surface; funnel it
-            # through the same normalizer ``sessions.rename`` uses so a
-            # patch and a rename can never store different shapes.
-            if field == "displayName":
-                value = normalize_session_name(value)
-            update_values[attr] = value
-            updated_fields.append(field)
+
+    name_field = next(
+        (f for f in ("displayName", "display_name", "name") if f in params),
+        None,
+    )
+    if name_field is not None and hasattr(session, "display_name"):
+        update_values["display_name"] = normalize_session_name(params[name_field])
+        updated_fields.append(name_field)
+
+    if "model" in params and hasattr(session, "model"):
+        update_values["model"] = params["model"]
+        updated_fields.append("model")
+
+    thinking_field = next(
+        (f for f in ("thinkingLevel", "thinking_level") if f in params),
+        None,
+    )
+    if thinking_field is not None and hasattr(session, "thinking_level"):
+        update_values["thinking_level"] = params[thinking_field]
+        updated_fields.append(thinking_field)
+
+    if "metadata" in params and hasattr(session, "meta"):
+        update_values["meta"] = params["metadata"]
+        updated_fields.append("metadata")
 
     if update_values:
         update = getattr(ctx.session_manager, "update", None)
@@ -1589,7 +1601,7 @@ async def _handle_sessions_patch(params: dict | None, ctx: RpcContext) -> dict:
                 f"Project '{raw_project}' does not exist",
                 details={"projectId": raw_project},
             ) from exc
-        updated_fields.append("projectId")
+        updated_fields.append("projectId" if "projectId" in params else "project_id")
         await _emit_to_subscribers(
             ctx,
             key,
