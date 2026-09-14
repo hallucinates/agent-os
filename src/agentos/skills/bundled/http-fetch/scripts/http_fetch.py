@@ -40,6 +40,27 @@ def _fetch(
         return exc.code, (exc.read() if hasattr(exc, "read") else b""), exc.reason
 
 
+def _truncate_bytes(raw: bytes, max_bytes: int) -> bytes:
+    """Truncate *raw* bytes to at most *max_bytes* without splitting UTF-8 sequences."""
+    if max_bytes <= 0:
+        return b""
+    if len(raw) <= max_bytes:
+        return raw
+    marker = b"\xe2\x80\xa6"
+    if max_bytes < len(marker):
+        return raw[:max_bytes]
+    cut_limit = max_bytes - len(marker)
+    candidate = raw[:cut_limit]
+    while cut_limit > 0:
+        try:
+            candidate.decode("utf-8")
+            break
+        except UnicodeDecodeError:
+            cut_limit -= 1
+            candidate = raw[:cut_limit]
+    return candidate + marker
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--url", required=True)
@@ -81,7 +102,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     if len(raw) > args.max_bytes:
-        raw = raw[: args.max_bytes - 1] + b"\xe2\x80\xa6"  # … (truncation marker)
+        raw = _truncate_bytes(raw, args.max_bytes)
 
     # Lossy decode — meta-skill DAGs need string output for templating.
     text = raw.decode("utf-8", errors="replace")
