@@ -253,9 +253,10 @@ def parse_cron(expr: str) -> CronExpression:
 
     # Handle @presets
     if expr.startswith("@"):
-        if expr not in _PRESETS:
+        preset_key = expr.lower()
+        if preset_key not in _PRESETS:
             raise CronParseError(f"Unknown preset '{expr}'")
-        expr = _PRESETS[expr]
+        expr = _PRESETS[preset_key]
 
     fields = expr.split()
     if len(fields) != 5:

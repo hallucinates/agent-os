@@ -35,6 +35,9 @@ def test_parse_cron_names_are_case_insensitive() -> None:
 
 def test_parse_cron_accepts_preset_alias() -> None:
     assert parse_cron("@hourly").raw == "0 * * * *"
+    assert parse_cron("@HOURLY").raw == "0 * * * *"
+    assert parse_cron("@Daily").raw == "0 0 * * *"
+    assert parse_cron("@WEEKLY").raw == "0 0 * * 0"
 
 
 def test_parse_cron_rejects_wrong_field_count() -> None:
