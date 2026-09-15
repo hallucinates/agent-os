@@ -566,7 +566,11 @@ async def run_web_search_payload(
             retryable=False,
         )
 
-    limit = max_results or _active_max_results
+    limit = (
+        _active_max_results
+        if (max_results is None or max_results <= 0)
+        else min(max_results, 20)
+    )
     attempts: list[dict[str, str]] | None = [] if _active_search_diagnostics else None
     try:
         provider = get_provider(

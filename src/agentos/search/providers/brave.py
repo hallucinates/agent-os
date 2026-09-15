@@ -50,7 +50,7 @@ class BraveSearchProvider:
             ) as client:
                 response = await client.get(
                     _API_URL,
-                    params={"q": query, "count": min(max_results, 20)},
+                    params={"q": query, "count": max(1, min(max_results, 20))},
                     headers={
                         "Accept": "application/json",
                         "X-Subscription-Token": self._api_key,

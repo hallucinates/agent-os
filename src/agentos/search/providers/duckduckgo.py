@@ -113,7 +113,7 @@ class DuckDuckGoProvider:
             results.append(
                 SearchResult(title=title, url=href, snippet=snippet, source="duckduckgo")
             )
-            if len(results) >= max_results:
+            if len(results) >= max(1, max_results):
                 break
 
         return results

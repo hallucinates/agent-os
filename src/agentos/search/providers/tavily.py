@@ -57,7 +57,7 @@ class TavilySearchProvider:
                     json={
                         "query": query,
                         "search_depth": "basic",
-                        "max_results": min(max_results, 20),
+                        "max_results": max(1, min(max_results, 20)),
                     },
                 )
                 response.raise_for_status()
