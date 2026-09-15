@@ -75,6 +75,8 @@ def _is_ddg_challenge(response: httpx.Response, soup: BeautifulSoup) -> bool:
 
 
 def _ddg_search(query: str, limit: int) -> list[Result]:
+    if limit <= 0:
+        return []
     with _client() as client:
         soup: BeautifulSoup | None = None
         for attempt in range(2):
@@ -122,6 +124,8 @@ _BRAVE_MAX_COUNT = 20  # Brave Web Search API hard-caps `count` at 20; >20 → H
 
 
 def _brave_search(query: str, limit: int) -> list[Result]:
+    if limit <= 0:
+        return []
     api_key = os.environ.get("BRAVE_SEARCH_API_KEY") or os.environ.get("BRAVE_API_KEY")
     if not api_key:
         raise RuntimeError("BRAVE_SEARCH_API_KEY/BRAVE_API_KEY not set; skipping")
@@ -155,6 +159,8 @@ def _brave_search(query: str, limit: int) -> list[Result]:
 
 
 def _tavily_search(query: str, limit: int) -> list[Result]:
+    if limit <= 0:
+        return []
     api_key = os.environ.get("TAVILY_API_KEY")
     if not api_key:
         raise RuntimeError("TAVILY_API_KEY not set; skipping")
@@ -186,6 +192,8 @@ def _tavily_search(query: str, limit: int) -> list[Result]:
 
 
 def _serpapi_search(query: str, limit: int) -> list[Result]:
+    if limit <= 0:
+        return []
     api_key = os.environ.get("SERPAPI_API_KEY")
     if not api_key:
         raise RuntimeError("SERPAPI_API_KEY not set; skipping")
@@ -219,6 +227,8 @@ FIRECRAWL_TIMEOUT_S = 30.0
 
 
 def _firecrawl_search(query: str, limit: int) -> list[Result]:
+    if limit <= 0:
+        return []
     api_key = os.environ.get("FIRECRAWL_API_KEY")
     if not api_key:
         raise RuntimeError("FIRECRAWL_API_KEY not set; skipping")
@@ -387,6 +397,8 @@ def _x_citations(payload: dict[str, Any]) -> list[tuple[str, str]]:
 
 
 def _x_search(query: str, limit: int) -> EngineOutput:
+    if limit <= 0:
+        return EngineOutput(results=[])
     credential = _resolve_xai_credential()
     body = {
         "model": os.environ.get("AGENTOS_X_SEARCH_MODEL", "").strip() or X_SEARCH_DEFAULT_MODEL,
@@ -480,6 +492,7 @@ def search_all(
     strict: bool,
 ) -> dict[str, object]:
     normalized_query = _normalize_query(query)
+    limit = max(0, limit)
     engines = resolve_engines(engines)
     results: list[dict[str, object]] = []
     answers: list[dict[str, str]] = []

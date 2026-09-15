@@ -688,3 +688,16 @@ def test_search_all_reports_resolved_engines(
 
     assert payload["engines"] == ["duckduckgo"]
     assert payload["errors"] == []
+
+
+def test_non_positive_limit_returns_empty_results(monkeypatch: pytest.MonkeyPatch) -> None:
+    search = _import_search()
+    client = _FakeClient([_Response(text=_DDG_HTML)])
+    monkeypatch.setattr(search, "_client", lambda: client)
+
+    for limit in (0, -1, -5):
+        payload = search.search_all(query="q", engines=["duckduckgo"], limit=limit, strict=False)
+        assert payload["results"] == []
+        assert payload["errors"] == []
+    assert len(client.calls) == 0
+
