@@ -76,12 +76,14 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    if "/" not in args.repo:
+    repo = args.repo.strip().strip("/")
+    parts = repo.split("/")
+    if len(parts) != 2 or not parts[0] or not parts[1]:
         print("--repo must look like owner/name", file=sys.stderr)
         return 1
 
-    watermark = args.name or f"github-{args.repo.replace('/', '-')}-{args.scope}"
-    url = f"{API_ROOT}/repos/{args.repo}/{args.scope}?per_page=30"
+    watermark = args.name or f"github-{repo.replace('/', '-')}-{args.scope}"
+    url = f"{API_ROOT}/repos/{repo}/{args.scope}?per_page=30"
     if args.scope == "issues":
         url += "&state=open&sort=created&direction=desc"
 

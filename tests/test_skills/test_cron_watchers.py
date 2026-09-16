@@ -291,8 +291,9 @@ def test_watcher_refuses_other_non_http_schemes(url, state_dir):
 # ── watch_github ────────────────────────────────────────────────────────────
 
 
-def test_github_rejects_a_malformed_repo(state_dir):
-    result = _run("watch_github.py", "--repo", "not-a-repo", env_home=state_dir)
+@pytest.mark.parametrize("invalid_repo", ["not-a-repo", "owner/", "/name", "owner/name/extra", "/"])
+def test_github_rejects_a_malformed_repo(invalid_repo, state_dir):
+    result = _run("watch_github.py", "--repo", invalid_repo, env_home=state_dir)
 
     assert result.returncode == 1
     assert "owner/name" in result.stderr
