@@ -264,8 +264,14 @@ class Args:
 
 
 def _encode_input_image(path: str) -> str:
-    raw = Path(path).read_bytes()
-    suffix = Path(path).suffix.lower().lstrip(".")
+    p = Path(path)
+    if not p.is_file():
+        raise RuntimeError(f"Image not found or is a directory: {path}")
+    try:
+        raw = p.read_bytes()
+    except Exception as exc:
+        raise RuntimeError(f"Failed to read image at {path}: {exc}") from exc
+    suffix = p.suffix.lower().lstrip(".")
     mime = {
         "jpg": "image/jpeg",
         "jpeg": "image/jpeg",
