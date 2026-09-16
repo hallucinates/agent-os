@@ -193,3 +193,36 @@ async def test_git_commit_with_named_files_stages_only_those(
         ("add", "--", "file1.txt"),
         ("commit", "-m", "commit one"),
     ]
+
+
+def _git_log_impl() -> Any:
+    return git.git_log.__wrapped__.__wrapped__  # type: ignore[attr-defined]
+
+
+def test_git_log_argv_clamps_count() -> None:
+    assert git._git_log_argv({}) == ("git", "log", "10")
+    assert git._git_log_argv({"count": 5}) == ("git", "log", "5")
+    assert git._git_log_argv({"count": 0}) == ("git", "log", "1")
+    assert git._git_log_argv({"count": -1}) == ("git", "log", "1")
+    assert git._git_log_argv({"count": 1000}) == ("git", "log", "100")
+    assert git._git_log_argv({"count": "invalid"}) == ("git", "log", "10")
+
+
+async def test_git_log_clamps_non_positive_count(monkeypatch: pytest.MonkeyPatch) -> None:
+    recorder = _RecordingRunGit()
+    monkeypatch.setattr(git, "_run_git", recorder)
+
+    await _git_log_impl()(count=0)
+    assert recorder.calls == [("log", "--max-count=1", "--oneline", "--decorate")]
+
+    recorder.calls.clear()
+    await _git_log_impl()(count=-5)
+    assert recorder.calls == [("log", "--max-count=1", "--oneline", "--decorate")]
+
+
+async def test_git_log_clamps_excessive_count(monkeypatch: pytest.MonkeyPatch) -> None:
+    recorder = _RecordingRunGit()
+    monkeypatch.setattr(git, "_run_git", recorder)
+
+    await _git_log_impl()(count=500)
+    assert recorder.calls == [("log", "--max-count=100", "--oneline", "--decorate")]

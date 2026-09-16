@@ -229,24 +229,48 @@ async def git_commit(
     return await _run_git("commit", "-m", message, cwd=cwd)
 
 
+_GIT_LOG_DEFAULT_COUNT: int = 10
+_GIT_LOG_MAX_COUNT: int = 100
+
+
+def _clamp_log_count(count: Any) -> int:
+    """Clamp the requested commit count to [1, _GIT_LOG_MAX_COUNT].
+
+    A non-positive value (e.g. 0 or -1) would cause ``git log --max-count=<n>``
+    to dump unbounded commit history, flooding context and memory.
+    """
+    try:
+        val = int(count)
+    except (TypeError, ValueError):
+        val = _GIT_LOG_DEFAULT_COUNT
+    return max(1, min(val, _GIT_LOG_MAX_COUNT))
+
+
+def _git_log_argv(args: dict[str, Any]) -> tuple[str, ...]:
+    return ("git", "log", str(_clamp_log_count(args.get("count", _GIT_LOG_DEFAULT_COUNT))))
+
+
 @tool(
     name="git_log",
     description="Show recent git commit log.",
     params={
-        "count": {"type": "integer", "description": "Number of commits to show (default 10)."},
+        "count": {
+            "type": "integer",
+            "description": "Number of commits to show (default 10, min 1, max 100).",
+        },
         "workdir": {"type": "string", "description": "Git repository directory (default: cwd)."},
     },
     required=[],
 )
 @sandboxed(
     kind="git.read",
-    argv_factory=lambda a: ("git", "log", str(a.get("count", 10))),
+    argv_factory=_git_log_argv,
     record_payload=False,
 )
-async def git_log(count: int = 10, workdir: str | None = None) -> str:
+async def git_log(count: int = _GIT_LOG_DEFAULT_COUNT, workdir: str | None = None) -> str:
     return await _run_git(
         "log",
-        f"--max-count={count}",
+        f"--max-count={_clamp_log_count(count)}",
         "--oneline",
         "--decorate",
         cwd=_effective_workdir(workdir),
