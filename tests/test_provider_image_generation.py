@@ -671,3 +671,67 @@ def test_image_generation_capability_does_not_expose_agent_tool_when_disabled(
     names = {tool.name for tool in tool_defs}
 
     assert "image_generate" not in names
+
+
+@pytest.mark.asyncio
+async def test_openrouter_image_provider_fetches_standard_url_fallback(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeResponse:
+        def __init__(self, content=None):
+            self.content = content
+            self.headers = {"Content-Type": "image/jpeg"}
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "images": [
+                                {
+                                    "image_url": {"url": "https://example.com/image.jpg"},
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+        async def post(self, url, *, headers, json):
+            captured["post_url"] = url
+            return FakeResponse()
+
+        async def get(self, url):
+            captured["get_url"] = url
+            return FakeResponse(content=b"fetched-image")
+
+    monkeypatch.setattr(
+        "agentos.provider.image_generation.httpx.AsyncClient",
+        lambda **kwargs: FakeClient(),
+    )
+
+    provider = OpenRouterImageGenerationProvider(api_key="or-test")
+    result = await provider.generate(
+        ImageGenerationRequest(
+            prompt="draw a squid",
+            model="google/gemini-3.1-flash-image-preview",
+            size="1536x1024",
+            output_format="png",
+            timeout_seconds=10.0,
+        )
+    )
+
+    assert captured["post_url"] == "https://openrouter.ai/api/v1/chat/completions"
+    assert captured["get_url"] == "https://example.com/image.jpg"
+    assert result.image_bytes == b"fetched-image"
+    assert result.mime_type == "image/jpeg"

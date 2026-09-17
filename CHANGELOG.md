@@ -10,6 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- `OpenRouterImageGenerationProvider` crashed with `RuntimeError: Image generation provider returned unsupported image URL` when the API returned a standard HTTPS URL instead of a base64 `data:` URI; it now correctly fetches the image via `httpx.get`
+  ([#2573](https://github.com/use-agent-os/agent-os/issues/2573)).
 - `apply_patch` spliced each hunk by the length of its header context and
   then rebuilt the tail from the body, so a hunk whose body consumed a
   different number of lines than the header declared duplicated or dropped

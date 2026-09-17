@@ -185,7 +185,19 @@ class OpenRouterImageGenerationProvider:
         image_url = _extract_openrouter_image_url(data)
         if not image_url:
             raise RuntimeError("Image generation provider returned no images")
-        mime_type, image_bytes = _decode_data_url(image_url)
+
+        if image_url.startswith("data:"):
+            mime_type, image_bytes = _decode_data_url(image_url)
+        else:
+            async with httpx.AsyncClient(
+                timeout=request.timeout_seconds,
+                trust_env=_trust_env(),
+            ) as client:
+                resp = await client.get(image_url)
+                resp.raise_for_status()
+                image_bytes = resp.content
+                mime_type = resp.headers.get("Content-Type") or "image/png"
+
         return ImageGenerationResult(
             image_bytes=image_bytes,
             mime_type=mime_type,
