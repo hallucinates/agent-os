@@ -86,6 +86,7 @@ class OpenAIImageGenerationProvider:
             "size": request.size,
             "output_format": request.output_format,
             "n": 1,
+            "response_format": "b64_json",
         }
         async with httpx.AsyncClient(
             timeout=request.timeout_seconds,
@@ -99,14 +100,24 @@ class OpenAIImageGenerationProvider:
             response.raise_for_status()
             data = response.json()
 
-        items = data.get("data") or []
-        if not items:
-            raise RuntimeError("Image generation provider returned no images")
-        first = items[0]
-        b64_json = first.get("b64_json")
-        if not b64_json:
-            raise RuntimeError("Image generation provider returned no b64_json")
-        image_bytes = base64.b64decode(b64_json)
+            items = data.get("data") or []
+            if not items:
+                raise RuntimeError("Image generation provider returned no images")
+            first = items[0]
+            b64_json = first.get("b64_json")
+            if b64_json:
+                image_bytes = base64.b64decode(b64_json)
+            elif first.get("url"):
+                url = str(first["url"])
+                if url.startswith("data:"):
+                    _, image_bytes = _decode_data_url(url)
+                else:
+                    dl_resp = await client.get(url)
+                    dl_resp.raise_for_status()
+                    image_bytes = dl_resp.content
+            else:
+                raise RuntimeError("Image generation provider returned neither b64_json nor url")
+
         output_format = request.output_format.lower()
         mime_type = "image/jpeg" if output_format in {"jpg", "jpeg"} else f"image/{output_format}"
         return ImageGenerationResult(

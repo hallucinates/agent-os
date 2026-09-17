@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Support URL responses and request `b64_json` format in `OpenAIImageGenerationProvider` ([#2446](https://github.com/use-agent-os/agent-os/issues/2446)).
+
 ## [2026.9.16] - 2026-09-16
 
 ### Fixed

@@ -671,3 +671,133 @@ def test_image_generation_capability_does_not_expose_agent_tool_when_disabled(
     names = {tool.name for tool in tool_defs}
 
     assert "image_generate" not in names
+
+
+@pytest.mark.asyncio
+async def test_openai_image_provider_sends_response_format_b64_json(monkeypatch) -> None:
+    from agentos.provider.image_generation import (
+        ImageGenerationRequest,
+        OpenAIImageGenerationProvider,
+    )
+
+    captured: dict[str, object] = {}
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {
+                "data": [
+                    {
+                        "b64_json": "YWdlbnRvcw==",
+                        "revised_prompt": "revised prompt text",
+                    }
+                ]
+            }
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+        async def post(self, url, *, headers, json):
+            captured["url"] = url
+            captured["headers"] = headers
+            captured["json"] = json
+            return FakeResponse()
+
+    monkeypatch.setattr(
+        "agentos.provider.image_generation.httpx.AsyncClient",
+        lambda **kwargs: FakeClient(),
+    )
+
+    provider = OpenAIImageGenerationProvider(api_key="sk-openai-test")
+    result = await provider.generate(
+        ImageGenerationRequest(
+            prompt="draw a sunset",
+            model="dall-e-3",
+            size="1024x1024",
+            output_format="png",
+        )
+    )
+
+    assert captured["json"] == {
+        "model": "dall-e-3",
+        "prompt": "draw a sunset",
+        "size": "1024x1024",
+        "output_format": "png",
+        "n": 1,
+        "response_format": "b64_json",
+    }
+    assert result.image_bytes == b"agentos"
+    assert result.mime_type == "image/png"
+    assert result.revised_prompt == "revised prompt text"
+
+
+@pytest.mark.asyncio
+async def test_openai_image_provider_handles_url_response_fallback(monkeypatch) -> None:
+    from agentos.provider.image_generation import (
+        ImageGenerationRequest,
+        OpenAIImageGenerationProvider,
+    )
+
+    captured_urls: list[str] = []
+
+    class FakePostResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {
+                "data": [
+                    {
+                        "url": "https://oaidalleapiprodscus.blob.core.windows.net/generated/image.png",
+                        "revised_prompt": "url revised prompt",
+                    }
+                ]
+            }
+
+    class FakeGetResponse:
+        content = b"downloaded-image-bytes"
+
+        def raise_for_status(self) -> None:
+            return None
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+        async def post(self, url, *, headers, json):
+            captured_urls.append(url)
+            return FakePostResponse()
+
+        async def get(self, url):
+            captured_urls.append(url)
+            return FakeGetResponse()
+
+    monkeypatch.setattr(
+        "agentos.provider.image_generation.httpx.AsyncClient",
+        lambda **kwargs: FakeClient(),
+    )
+
+    provider = OpenAIImageGenerationProvider(api_key="sk-openai-test")
+    result = await provider.generate(
+        ImageGenerationRequest(
+            prompt="draw a mountain",
+            model="dall-e-3",
+            size="1024x1024",
+            output_format="jpeg",
+        )
+    )
+
+    assert "https://api.openai.com/v1/images/generations" in captured_urls
+    assert "https://oaidalleapiprodscus.blob.core.windows.net/generated/image.png" in captured_urls
+    assert result.image_bytes == b"downloaded-image-bytes"
+    assert result.mime_type == "image/jpeg"
+    assert result.revised_prompt == "url revised prompt"
