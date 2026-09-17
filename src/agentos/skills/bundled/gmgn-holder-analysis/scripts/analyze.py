@@ -3,6 +3,12 @@ import json, subprocess, sys, time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 
+# Force UTF-8 stdio so emoji and Chinese prints don't raise UnicodeEncodeError
+# on non-UTF-8 console code pages or when captured via subprocess pipes.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 USAGE = f"Usage: {sys.argv[0]} <token_address> <chain> [zh|en]"
 
 if len(sys.argv) > 1 and sys.argv[1] in ("-h", "--help"):

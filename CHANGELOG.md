@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Bundled skills: `gmgn-holder-analysis` reconfigures stdio to UTF-8 at startup, preventing `UnicodeEncodeError` when printing Unicode emojis and Chinese characters on non-UTF-8 console code pages ([#2692](https://github.com/use-agent-os/agent-os/issues/2692)).
+
 ## [2026.9.17] - 2026-09-17
 
 ### Added
